@@ -1,0 +1,47 @@
+{
+  "name": "@clanker/cron",
+  "version": "1.0.0",
+  "description": "Schedule Clanker commands to run at specific times or intervals",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "clanker",
+    "cron",
+    "scheduler",
+    "automation",
+    "task-scheduling"
+  ],
+  "author": "Clanker",
+  "license": "MIT",
+  "dependencies": {
+    "@clanker/core": "^1.0.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clanker/clanker-cron.git"
+  },
+  "bugs": {
+    "url": "https://github.com/clanker/clanker-cron/issues"
+  },
+  "homepage": "https://github.com/clanker/clanker-cron#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
