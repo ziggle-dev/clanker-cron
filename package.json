@@ -1,41 +1,57 @@
 {
-  "name": "@clanker/cron",
+  "name": "@clanker/schedule",
   "version": "1.0.0",
-  "description": "Schedule Clanker commands to run at specific times or intervals",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "description": "Schedule Clanker commands to run after a specified delay",
+  "type": "module",
+  "main": "src/index.ts",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build"
+    "build": "echo 'No build needed for ESM tools'",
+    "test": "echo \"No tests yet\"",
+    "lint": "eslint src --ext .ts,.tsx"
   },
   "keywords": [
     "clanker",
-    "cron",
+    "schedule",
     "scheduler",
     "automation",
     "task-scheduling"
   ],
   "author": "Clanker",
   "license": "MIT",
-  "dependencies": {
-    "zod": "^3.22.0"
+  "clanker": {
+    "category": "System",
+    "capabilities": [
+      "SystemExecute"
+    ],
+    "tags": [
+      "schedule",
+      "delay",
+      "timer",
+      "reminder",
+      "cron"
+    ],
+    "minVersion": "0.1.34"
+  },
+  "peerDependencies": {
+    "@ziggler/clanker": "*",
+    "ink": "*",
+    "react": "*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@ziggler/clanker": "^0.1.35",
     "typescript": "^5.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/clanker/clanker-cron.git"
+    "url": "git+https://github.com/clanker/clanker-schedule.git"
   },
   "bugs": {
-    "url": "https://github.com/clanker/clanker-cron/issues"
+    "url": "https://github.com/clanker/clanker-schedule/issues"
   },
-  "homepage": "https://github.com/clanker/clanker-cron#readme",
+  "homepage": "https://github.com/clanker/clanker-schedule#readme",
   "files": [
-    "dist",
+    "src",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"

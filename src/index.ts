@@ -1,299 +1,186 @@
-import { z } from 'zod';
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+/**
+ * Schedule tool - Schedule Clanker commands to run after a delay
+ */
+
+import { createTool, ToolCategory, ToolCapability } from '@ziggler/clanker';
 import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
-// Mock createTool for testing purposes
-interface ToolConfig {
-  name: string;
-  description: string;
-  version: string;
-  author: string;
-  category: string;
-  capabilities: string[];
-  args: z.ZodSchema<any>;
-  run: (options: { args: any; print: any }) => Promise<void> | void;
-}
+/**
+ * Schedule tool - Schedules commands to run after a specified delay
+ */
+export default createTool()
+    .id('schedule')
+    .name('Schedule Task')
+    .description('Schedule a Clanker command to run after a delay. USE THIS instead of bash/sleep/at/cron commands for scheduling tasks, reminders, or delayed execution.')
+    .category(ToolCategory.System)
+    .capabilities(ToolCapability.SystemExecute)
+    .tags('schedule', 'delay', 'timer', 'reminder', 'cron', 'later', 'postpone', 'defer')
 
-function createTool(config: ToolConfig) {
-  return config;
-}
+    // Arguments
+    .stringArg('task', 'The Clanker command to execute (e.g., "Use elevenlabs-tts to say Hello")', { required: true })
+    .stringArg('when', 'When to execute: "10 seconds", "5 minutes", "2 hours", "3:30pm", etc.', { required: true })
 
-const ActionSchema = z.enum(['schedule', 'list', 'remove', 'run', 'clear']);
-
-const FrequencySchema = z.enum(['once', 'hourly', 'daily', 'weekly', 'monthly']);
-
-interface CronJob {
-  id: string;
-  name: string;
-  command: string;
-  frequency: string;
-  time?: string;
-  date?: string;
-  weekday?: string;
-  dayOfMonth?: number;
-  context?: Record<string, any>;
-  createdAt: string;
-  lastRun?: string;
-  nextRun: string;
-  enabled: boolean;
-}
-
-const ScheduleArgsSchema = z.object({
-  action: ActionSchema,
-  name: z.string().optional(),
-  command: z.string().optional(),
-  frequency: FrequencySchema.optional(),
-  time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  weekday: z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']).optional(),
-  dayOfMonth: z.number().min(1).max(31).optional(),
-  id: z.string().optional(),
-  context: z.record(z.any()).optional(),
-});
-
-type ScheduleArgs = z.infer<typeof ScheduleArgsSchema>;
-
-export default createTool({
-  name: 'cron',
-  description: 'Schedule Clanker commands to run at specific times or intervals',
-  version: '1.0.0',
-  author: 'Clanker',
-  category: 'System',
-  capabilities: ['FileRead', 'FileWrite', 'SystemExecute'],
-  args: ScheduleArgsSchema,
-  run: async ({ args, print }) => {
-    const configDir = join(homedir(), '.clanker', 'cron');
-    const configFile = join(configDir, 'jobs.json');
-
-    if (!existsSync(configDir)) {
-      mkdirSync(configDir, { recursive: true });
-    }
-
-    let jobs: CronJob[] = [];
-    if (existsSync(configFile)) {
-      try {
-        const data = readFileSync(configFile, 'utf-8');
-        jobs = JSON.parse(data);
-      } catch (error) {
-        print.error('Failed to read cron jobs file');
-      }
-    }
-
-    const saveJobs = () => {
-      writeFileSync(configFile, JSON.stringify(jobs, null, 2));
-    };
-
-    const calculateNextRun = (frequency: string, time?: string, date?: string, weekday?: string, dayOfMonth?: number): string => {
-      const now = new Date();
-      let next = new Date(now);
-
-      switch (frequency) {
-        case 'once':
-          if (date && time) {
-            const [hours, minutes] = time.split(':').map(Number);
-            next = new Date(`${date}T${time}:00`);
-          }
-          break;
-
-        case 'hourly':
-          next.setHours(next.getHours() + 1);
-          next.setMinutes(0);
-          next.setSeconds(0);
-          break;
-
-        case 'daily':
-          if (time) {
-            const [hours, minutes] = time.split(':').map(Number);
-            next.setHours(hours, minutes, 0, 0);
-            if (next <= now) {
-              next.setDate(next.getDate() + 1);
-            }
-          }
-          break;
-
-        case 'weekly':
-          if (weekday && time) {
-            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-            const targetDay = days.indexOf(weekday);
-            const currentDay = next.getDay();
-            let daysUntilTarget = targetDay - currentDay;
-            
-            if (daysUntilTarget < 0) {
-              daysUntilTarget += 7;
-            } else if (daysUntilTarget === 0 && time) {
-              const [hours, minutes] = time.split(':').map(Number);
-              const targetTime = new Date(next);
-              targetTime.setHours(hours, minutes, 0, 0);
-              if (targetTime <= now) {
-                daysUntilTarget = 7;
-              }
-            }
-            
-            next.setDate(next.getDate() + daysUntilTarget);
-            if (time) {
-              const [hours, minutes] = time.split(':').map(Number);
-              next.setHours(hours, minutes, 0, 0);
-            }
-          }
-          break;
-
-        case 'monthly':
-          if (dayOfMonth && time) {
-            const [hours, minutes] = time.split(':').map(Number);
-            next.setDate(dayOfMonth);
-            next.setHours(hours, minutes, 0, 0);
-            if (next <= now) {
-              next.setMonth(next.getMonth() + 1);
-            }
-          }
-          break;
-      }
-
-      return next.toISOString();
-    };
-
-    switch (args.action) {
-      case 'schedule':
-        if (!args.name || !args.command || !args.frequency) {
-          print.error('Name, command, and frequency are required for scheduling');
-          return;
+    // Examples
+    .examples([
+        {
+            description: 'Remind me in 5 minutes to take a break',
+            arguments: {
+                task: 'Use elevenlabs-tts to say "Time to take a break!" with voice Rachel',
+                when: '5 minutes'
+            },
+            result: 'Task scheduled for 5 minutes from now'
+        },
+        {
+            description: 'Schedule a reminder for 30 seconds',
+            arguments: {
+                task: 'Use elevenlabs-tts to say "Your reminder is here" with voice Clyde',
+                when: '30 seconds'
+            },
+            result: 'Task scheduled for 30 seconds from now'
+        },
+        {
+            description: 'Set an alarm for 3:30pm',
+            arguments: {
+                task: 'Use elevenlabs-tts to say "It is now 3:30 PM" with voice Rachel',
+                when: '3:30pm'
+            },
+            result: 'Task scheduled for 3:30 PM'
+        },
+        {
+            description: 'Remind me to use the bathroom in 10 seconds',
+            arguments: {
+                task: 'Use elevenlabs-tts to say "Time to use the bathroom" with voice Rachel',
+                when: '10 seconds'
+            },
+            result: 'Task scheduled for 10 seconds from now'
         }
+    ])
 
-        if (args.frequency === 'once' && (!args.date || !args.time)) {
-          print.error('Date and time are required for one-time scheduling');
-          return;
-        }
-
-        if (args.frequency === 'daily' && !args.time) {
-          print.error('Time is required for daily scheduling');
-          return;
-        }
-
-        if (args.frequency === 'weekly' && (!args.weekday || !args.time)) {
-          print.error('Weekday and time are required for weekly scheduling');
-          return;
-        }
-
-        if (args.frequency === 'monthly' && (!args.dayOfMonth || !args.time)) {
-          print.error('Day of month and time are required for monthly scheduling');
-          return;
-        }
-
-        const newJob: CronJob = {
-          id: Date.now().toString(36) + Math.random().toString(36).substr(2),
-          name: args.name,
-          command: args.command,
-          frequency: args.frequency,
-          time: args.time,
-          date: args.date,
-          weekday: args.weekday,
-          dayOfMonth: args.dayOfMonth,
-          context: args.context,
-          createdAt: new Date().toISOString(),
-          nextRun: calculateNextRun(args.frequency, args.time, args.date, args.weekday, args.dayOfMonth),
-          enabled: true,
+    // Execute function
+    .execute(async (args: any, context: any) => {
+        const print = {
+            success: (msg: string) => console.log(`✅ ${msg}`),
+            info: (msg: string) => console.log(`ℹ️  ${msg}`),
+            error: (msg: string) => console.error(`❌ ${msg}`)
         };
-
-        jobs.push(newJob);
-        saveJobs();
-
-        print.success(`Scheduled job "${newJob.name}" (ID: ${newJob.id})`);
-        print.info(`Next run: ${new Date(newJob.nextRun).toLocaleString()}`);
-        break;
-
-      case 'list':
-        if (jobs.length === 0) {
-          print.info('No scheduled jobs found');
-          return;
-        }
-
-        print.table(
-          ['ID', 'Name', 'Command', 'Frequency', 'Next Run', 'Enabled'],
-          jobs.map(job => [
-            job.id,
-            job.name,
-            job.command.length > 30 ? job.command.substring(0, 27) + '...' : job.command,
-            job.frequency,
-            new Date(job.nextRun).toLocaleString(),
-            job.enabled ? '✓' : '✗',
-          ])
-        );
-        break;
-
-      case 'remove':
-        if (!args.id) {
-          print.error('Job ID is required for removal');
-          return;
-        }
-
-        const jobIndex = jobs.findIndex(job => job.id === args.id);
-        if (jobIndex === -1) {
-          print.error(`Job with ID "${args.id}" not found`);
-          return;
-        }
-
-        const removedJob = jobs.splice(jobIndex, 1)[0];
-        saveJobs();
-        print.success(`Removed job "${removedJob.name}" (ID: ${removedJob.id})`);
-        break;
-
-      case 'run':
-        if (!args.id) {
-          print.error('Job ID is required to run');
-          return;
-        }
-
-        const jobToRun = jobs.find(job => job.id === args.id);
-        if (!jobToRun) {
-          print.error(`Job with ID "${args.id}" not found`);
-          return;
-        }
-
-        print.info(`Running job "${jobToRun.name}"...`);
+        // Parse the "when" parameter to determine delay
+        const now = new Date();
+        let delayMs: number;
         
-        const env = { ...process.env };
-        if (jobToRun.context) {
-          Object.entries(jobToRun.context).forEach(([key, value]) => {
-            env[`CRON_${key.toUpperCase()}`] = String(value);
-          });
+        const whenLower = args.when.toLowerCase();
+        
+        if (whenLower.includes('second')) {
+            const seconds = parseInt(whenLower.match(/(\d+)\s*second/)?.[1] || '1');
+            delayMs = seconds * 1000;
+        } else if (whenLower.includes('minute')) {
+            const minutes = parseInt(whenLower.match(/(\d+)\s*minute/)?.[1] || '1');
+            delayMs = minutes * 60 * 1000;
+        } else if (whenLower.includes('hour')) {
+            const hours = parseInt(whenLower.match(/(\d+)\s*hour/)?.[1] || '1');
+            delayMs = hours * 60 * 60 * 1000;
+        } else if (whenLower === 'now') {
+            delayMs = 0;
+        } else {
+            // Try to parse as a specific time
+            const timeMatch = whenLower.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/);
+            if (timeMatch) {
+                let hours = parseInt(timeMatch[1]);
+                const minutes = parseInt(timeMatch[2]);
+                const ampm = timeMatch[3];
+                
+                if (ampm === 'pm' && hours < 12) hours += 12;
+                if (ampm === 'am' && hours === 12) hours = 0;
+                
+                const targetTime = new Date(now);
+                targetTime.setHours(hours, minutes, 0, 0);
+                
+                // If the time is in the past, assume tomorrow
+                if (targetTime <= now) {
+                    targetTime.setDate(targetTime.getDate() + 1);
+                }
+                
+                delayMs = targetTime.getTime() - now.getTime();
+            } else {
+                throw new Error(`Cannot parse time: ${args.when}`);
+            }
         }
 
-        const child = spawn('clanker', jobToRun.command.split(' '), {
-          stdio: 'inherit',
-          env,
-        });
+        const executionTime = new Date(now.getTime() + delayMs);
+        print.success(`Task scheduled for: ${executionTime.toLocaleString()}`);
+        print.info(`Will execute in ${Math.round(delayMs / 1000)} seconds`);
+        
+        // Create a detached process that will wait and then execute
+        const scriptContent = `
+const { spawn } = require('child_process');
+const os = require('os');
 
-        child.on('close', (code) => {
-          if (code === 0) {
-            print.success(`Job "${jobToRun.name}" completed successfully`);
-            jobToRun.lastRun = new Date().toISOString();
-            
-            if (jobToRun.frequency !== 'once') {
-              jobToRun.nextRun = calculateNextRun(
-                jobToRun.frequency,
-                jobToRun.time,
-                jobToRun.date,
-                jobToRun.weekday,
-                jobToRun.dayOfMonth
-              );
-            } else {
-              jobToRun.enabled = false;
+// Wait for the specified time
+setTimeout(() => {
+  console.log('Executing scheduled task...');
+  
+  // Set up environment for proper audio handling
+  const env = { ...process.env };
+  
+  // Spawn clanker with the task
+  const clanker = spawn('clanker', ['-p', ${JSON.stringify(args.task)}], {
+    stdio: 'inherit',
+    env: env,
+    cwd: process.cwd()
+  });
+  
+  clanker.on('error', (err) => {
+    console.error('Failed to execute clanker:', err);
+    process.exit(1);
+  });
+  
+  clanker.on('close', (code) => {
+    console.log('Task completed with code:', code);
+    process.exit(code || 0);
+  });
+}, ${delayMs});
+
+console.log('Scheduler running in background...');
+console.log('Scheduled for: ${executionTime.toISOString()}');
+`;
+
+        // Write to a temporary file and execute it in the background
+        const scriptPath = path.join(os.tmpdir(), `clanker_schedule_${Date.now()}.js`);
+        
+        fs.writeFileSync(scriptPath, scriptContent);
+        
+        // Spawn the script in the background
+        const child = spawn('node', [scriptPath], {
+            detached: true,
+            stdio: ['ignore', 'ignore', 'ignore']
+        });
+        
+        // Allow the parent process to exit while child continues
+        child.unref();
+        
+        print.success(`Background scheduler started (PID: ${child.pid})`);
+        print.info(`\nThe task will execute at ${executionTime.toLocaleTimeString()}`);
+        print.info(`You can close this terminal - the task will still run.`);
+        
+        // Clean up script file after a delay
+        setTimeout(() => {
+            try {
+                fs.unlinkSync(scriptPath);
+            } catch (e) {
+                // Ignore cleanup errors
             }
-            
-            saveJobs();
-          } else {
-            print.error(`Job "${jobToRun.name}" failed with code ${code}`);
-          }
-        });
-        break;
+        }, 5000);
 
-      case 'clear':
-        jobs = [];
-        saveJobs();
-        print.success('All scheduled jobs have been cleared');
-        break;
-    }
-  },
-});
+        return {
+            success: true,
+            output: `Task scheduled successfully! It will run at ${executionTime.toLocaleTimeString()}`,
+            data: {
+                scheduled: true,
+                executionTime: executionTime.toISOString(),
+                pid: child.pid
+            }
+        };
+    })
+    .build();
