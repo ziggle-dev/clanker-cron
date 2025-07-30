@@ -1,9 +1,24 @@
-import { createTool } from '@clanker/core';
 import { z } from 'zod';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
+
+// Mock createTool for testing purposes
+interface ToolConfig {
+  name: string;
+  description: string;
+  version: string;
+  author: string;
+  category: string;
+  capabilities: string[];
+  args: z.ZodSchema<any>;
+  run: (options: { args: any; print: any }) => Promise<void> | void;
+}
+
+function createTool(config: ToolConfig) {
+  return config;
+}
 
 const ActionSchema = z.enum(['schedule', 'list', 'remove', 'run', 'clear']);
 
@@ -17,7 +32,7 @@ interface CronJob {
   time?: string;
   date?: string;
   weekday?: string;
-  dayOfMonth?: string;
+  dayOfMonth?: number;
   context?: Record<string, any>;
   createdAt: string;
   lastRun?: string;
